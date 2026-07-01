@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from "react";
 import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { DailyRecord, SPCLimits } from "../types";
 import {
   ResponsiveContainer,
@@ -54,8 +55,8 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
   const [activeChartTab, setActiveChartTab] = useState<"rate" | "amount">("rate");
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  // 匯出 PNG 圖片 (保留完整介面與文字)
-  const handleExportImage = async () => {
+  // 匯出 PDF 檔 (以畫面擷取並輸出成 PDF 形式，固定並保留完整介面與文字)
+  const handleExportPDF = async () => {
     setIsExporting(true);
 
     // 備份並清潔當前頁面所有的 <style> 標籤與禁用外置 <link> 樣式表，防止 html2canvas 解析時崩潰
@@ -168,13 +169,35 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.download = `SPC-品質管制圖-${activeChartTab === "rate" ? "誤差率" : "誤差量"}-${new Date().toISOString().split("T")[0]}.png`;
-      link.href = imgData;
-      link.click();
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pdfWidth = 297; // A4 橫向寬度 (mm)
+      const pdfHeight = 210; // A4 橫向高度 (mm)
+      const margin = 10;
+      
+      const contentWidth = pdfWidth - 2 * margin;
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+      
+      // 適度調整高度，確保完美容納在單頁 A4
+      let renderWidth = contentWidth;
+      let renderHeight = contentHeight;
+      if (renderHeight > (pdfHeight - 2 * margin)) {
+        renderHeight = pdfHeight - 2 * margin;
+        renderWidth = (canvas.width * renderHeight) / canvas.height;
+      }
+
+      const xOffset = margin + (contentWidth - renderWidth) / 2;
+      const yOffset = margin + (pdfHeight - 2 * margin - renderHeight) / 2;
+
+      pdf.addImage(imgData, "PNG", xOffset, yOffset, renderWidth, renderHeight);
+      pdf.save(`SPC-品質管制圖-${activeChartTab === "rate" ? "誤差率" : "誤差量"}-${new Date().toISOString().split("T")[0]}.pdf`);
     } catch (error) {
-      console.error("Image export error:", error);
-      alert("匯出圖片時發生錯誤，請稍後重試。");
+      console.error("PDF export error:", error);
+      alert("匯出 PDF 時發生錯誤，請稍後重試。");
     } finally {
       // 絕對要回復原始 live document 標籤內容與狀態，避免影響原頁面呈現
       styleElements.forEach((el, idx) => {
@@ -262,6 +285,45 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
     });
   }, [records, activeLimits, useDynamicLimits, spcLimits]);
 
+  // 修正管制圖縱軸範圍，確保完整涵蓋所有數據點與 UCL / LCL 管制界限
+  const yAxisDomain = useMemo<[number, number]>(() => {
+    if (records.length === 0) {
+      return activeChartTab === "rate" ? [-6, 6] : [-60, 60];
+    }
+
+    if (activeChartTab === "rate") {
+      const rates = records.map((r) => r.errorRate);
+      const dataMin = Math.min(...rates, 0); // 確保 0 點在圖表中
+      const dataMax = Math.max(...rates, 0);
+      const limitsMin = activeLimits.lclRate;
+      const limitsMax = activeLimits.uclRate;
+      
+      const overallMin = Math.min(dataMin, limitsMin);
+      const overallMax = Math.max(dataMax, limitsMax);
+      const diff = overallMax - overallMin;
+      const pad = Math.max(1.0, diff * 0.15); // 提供 15% 的上下安全緩衝，最少 1.0%
+      return [
+        Number((overallMin - pad).toFixed(2)),
+        Number((overallMax + pad).toFixed(2))
+      ];
+    } else {
+      const amounts = records.map((r) => r.errorAmount);
+      const dataMin = Math.min(...amounts, 0); // 確保 0 點在圖表中
+      const dataMax = Math.max(...amounts, 0);
+      const limitsMin = activeLimits.lclAmount;
+      const limitsMax = activeLimits.uclAmount;
+      
+      const overallMin = Math.min(dataMin, limitsMin);
+      const overallMax = Math.max(dataMax, limitsMax);
+      const diff = overallMax - overallMin;
+      const pad = Math.max(10.0, diff * 0.15); // 提供 15% 的上下安全緩衝，最少 10斤
+      return [
+        Math.floor(overallMin - pad),
+        Math.ceil(overallMax + pad)
+      ];
+    }
+  }, [records, activeChartTab, activeLimits]);
+
   // 自訂 Tooltip
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -319,15 +381,15 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
             </button>
           </div>
 
-          {/* 匯出管制圖圖片按鈕 */}
+          {/* 匯出管制圖 PDF 報表按鈕 */}
           <button
-            onClick={handleExportImage}
+            onClick={handleExportPDF}
             disabled={isExporting}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 shadow-sm transition-all cursor-pointer`}
-            id="btn-export-image"
+            id="btn-export-pdf"
           >
             <Download className="w-4 h-4" />
-            {isExporting ? "匯出中..." : "匯出管制圖圖片"}
+            {isExporting ? "匯出中..." : "匯出管制圖 PDF"}
           </button>
         </div>
       </div>
@@ -376,8 +438,8 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
               fontSize={10}
               tickLine={false}
               axisLine={false}
-              domain={activeChartTab === "rate" ? ["dataMin - 1.5", "dataMax + 1.5"] : ["dataMin - 20", "dataMax + 20"]}
-              tickFormatter={(val) => (activeChartTab === "rate" ? `${val}%` : `${val}斤`)}
+              domain={yAxisDomain}
+              tickFormatter={(val) => (activeChartTab === "rate" ? `${Number(val).toFixed(1)}%` : `${Math.round(val)}斤`)}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11, color: "#475569" }} />
@@ -459,23 +521,65 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
         </ResponsiveContainer>
       </div>
 
-      {/* 底部說明 */}
-      <div className="mt-5 p-4 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between gap-4 text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-          <span>
-            {useDynamicLimits ? (
-              <>
-                當前採用 <strong className="text-slate-800">動態 3-Sigma SPC 計算</strong>。誤差率 UCL = <strong>{spcLimits.uclRate.toFixed(2)}%</strong> / LCL = <strong>{spcLimits.lclRate.toFixed(2)}%</strong>。
-              </>
-            ) : (
-              <>
-                當前採用 <strong className="text-slate-800">固定規格臨界線</strong>。正常波動範圍設定於 <strong>±5% 誤差率 / ±50斤誤差量</strong>。
-              </>
-            )}
-          </span>
+      {/* 底部說明欄位與提示資訊 - 保留完整方框、欄位與文字，匯出 PDF 時完整保留 */}
+      <div className="mt-6 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm bg-slate-50">
+        <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200/80 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>判讀指引與管制模型參數說明</span>
+          </div>
+          <span className="text-[9px] text-slate-400 font-mono tracking-wider font-semibold">WESTERN ELECTRIC RULES ENABLED</span>
         </div>
-        <span className="text-[10px] text-slate-400 font-mono hidden md:inline">WESTERN ELECTRIC RULES ENABLED</span>
+        
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 font-sans">
+          {/* 左側：管制界限 */}
+          <div className="bg-white p-3.5 rounded-lg border border-slate-200/60">
+            <h4 className="font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+              當前管制界限設定
+            </h4>
+            <p className="text-slate-500 leading-relaxed mb-2 text-[11px]">
+              {useDynamicLimits ? (
+                <>
+                  當前採用 <strong className="text-indigo-600">動態 3-Sigma SPC 計算</strong>。依歷史真實投料數據動態估算製程的固有波動。
+                </>
+              ) : (
+                <>
+                  當前採用 <strong className="text-emerald-600">固定規格臨界線</strong>。依生產管理規範之標準允收上限設定。
+                </>
+              )}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-center text-[11px] pt-1.5 border-t border-slate-100 font-mono">
+              <div className="bg-red-50 text-red-700 p-1 rounded border border-red-100">
+                <span className="block text-[9px] text-red-500 font-sans">管制上限 UCL</span>
+                <strong>{activeChartTab === "rate" ? `${activeLimits.uclRate.toFixed(2)}%` : `${activeLimits.uclAmount.toFixed(1)}斤`}</strong>
+              </div>
+              <div className="bg-slate-50 text-slate-700 p-1 rounded border border-slate-200/50">
+                <span className="block text-[9px] text-slate-500 font-sans">中心值 CL</span>
+                <strong>{activeChartTab === "rate" ? `${activeLimits.meanRate.toFixed(2)}%` : `${activeLimits.meanAmount.toFixed(1)}斤`}</strong>
+              </div>
+              <div className="bg-red-50 text-red-700 p-1 rounded border border-red-100">
+                <span className="block text-[9px] text-red-500 font-sans">管制下限 LCL</span>
+                <strong>{activeChartTab === "rate" ? `${activeLimits.lclRate.toFixed(2)}%` : `${activeLimits.lclAmount.toFixed(1)}斤`}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* 右側：判讀指引 */}
+          <div className="bg-white p-3.5 rounded-lg border border-slate-200/60 flex flex-col justify-between">
+            <div>
+              <h4 className="font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                SPC 製程異常判定指引
+              </h4>
+              <ul className="space-y-1 text-[11px] text-slate-500 list-disc list-inside leading-relaxed pl-1">
+                <li><strong className="text-red-600">單點超出 (紅叉)</strong>：投料誤差超出管制上下限，屬顯著失控事件，需追溯當日原料乾濕度、設備狀態或操作人員。</li>
+                <li><strong className="text-slate-700">連續 9 點在同側</strong>：表示製程平均值已發生持續性偏移 (Shift)，建議重新校正標準重量滑桿。</li>
+                <li><strong className="text-slate-700">歷史說明與備註</strong>：當日餘料波動、原料商來源(蘇慶村/松柏)變更等，均可配合滑桿做全面交叉比對。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
