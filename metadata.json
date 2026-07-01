@@ -1,0 +1,6 @@
+{
+  "name": "虱目魚漿製程誤差監控與 AI 診斷平台",
+  "description": "建立一套適用於虱目魚漿製程管理的智慧製程監控平台，提供自動資料收集、製程誤差分析、SPC 品質管制、Gemini AI 異常診斷及 Dashboard 即時監控。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
