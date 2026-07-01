@@ -26,7 +26,7 @@ import {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "ai" | "data" | "guide">("dashboard");
-  const [records, setRecords] = useState<DailyRecord[]>(INITIAL_RECORDS);
+  const [offlineMode, setOfflineMode] = useState<boolean>(false);
   const [barrelWeight, setBarrelWeight] = useState<number>(DEFAULT_BARREL_WEIGHT);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState<boolean>(false);
@@ -35,6 +35,27 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
 
+  // 從本機快取 localStorage 初始化，若無則使用模擬資料，確保完全離線可用
+  const [records, setRecords] = useState<DailyRecord[]>(() => {
+    const cached = localStorage.getItem("spc_records");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error("無法解析快取的離線生產資料:", e);
+      }
+    }
+    return INITIAL_RECORDS;
+  });
+
+  // 每當 records 有任何變動 (手動新增/修改/刪除/同步)，自動寫入本機快取
+  useEffect(() => {
+    localStorage.setItem("spc_records", JSON.stringify(records));
+  }, [records]);
+
   // 整理所有不重複且已排序的生產日期
   const uniqueDates = useMemo<string[]>(() => {
     const dates = records.map((r) => r.date);
@@ -42,30 +63,177 @@ export default function App() {
     return unique.sort((a, b) => b.localeCompare(a));
   }, [records]);
 
-  // 取得 Google Sheets 真實數據
+  // 前端直接解析 Google Sheets 匯出的 CSV 文字，不經由 Cloud Run
+  const parseCSVDtoRecords = (csvText: string): DailyRecord[] => {
+    const lines = csvText.split(/\r?\n/);
+    if (lines.length < 2) return [];
+
+    // 解析標題列以動態定位欄位索引
+    const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+    
+    const findHeaderIndex = (keyword: string, fallback: number, excludeKeywords: string[] = []) => {
+      const idx = headers.findIndex(h => {
+        const matched = h.includes(keyword);
+        if (!matched) return false;
+        if (excludeKeywords.length > 0) {
+          return !excludeKeywords.some(ex => h.includes(ex));
+        }
+        return true;
+      });
+      return idx !== -1 ? idx : fallback;
+    };
+
+    const dateIdx = findHeaderIndex("作業日期", 1);
+    const operatorIdx = findHeaderIndex("投料人員", 2);
+    const barrelsIdx = findHeaderIndex("生產桶數", 3);
+    
+    const supplierIdx1 = findHeaderIndex("原料廠商1", 5);
+    const supplierIdx2 = findHeaderIndex("原料廠商2", 6);
+    const supplierIdx3 = findHeaderIndex("原料廠商3", 7);
+    const supplierIdx4 = findHeaderIndex("原料廠商4", 8);
+
+    const weightIdx1 = findHeaderIndex("投料重量1", 9);
+    const weightIdx2 = findHeaderIndex("投料重量2", 10);
+    const weightIdx4 = findHeaderIndex("投料重量4", 11);
+    const weightIdx3 = findHeaderIndex("投料重量", 12, ["1", "2", "4", "總"]);
+
+    const leftoverIdx = findHeaderIndex("餘料重量", 13);
+    const otherIdx = findHeaderIndex("其他製造", 14);
+    const reasonIdx = findHeaderIndex("異常原因", 15);
+    const notesIdx = findHeaderIndex("備註", 16);
+
+    const parsedRecords: DailyRecord[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
+      if (cols.length <= Math.max(dateIdx, operatorIdx, barrelsIdx)) continue;
+      
+      const rawDate = cols[dateIdx] || "";
+      let date = rawDate;
+      const dateParts = rawDate.split(/[\/\-]/);
+      if (dateParts.length === 3) {
+        const y = dateParts[0];
+        const m = dateParts[1].padStart(2, "0");
+        const d = dateParts[2].padStart(2, "0");
+        date = `${y}-${m}-${d}`;
+      }
+      
+      const operator = cols[operatorIdx] || "未知";
+      const barrels = parseFloat(cols[barrelsIdx]) || 0;
+      
+      const weight1 = parseFloat(cols[weightIdx1]) || 0;
+      const weight2 = parseFloat(cols[weightIdx2]) || 0;
+      const weight3 = parseFloat(cols[weightIdx3]) || 0;
+      const weight4 = parseFloat(cols[weightIdx4]) || 0;
+      
+      const parseSupplierAndBatch = (supplierBatchStr: string, defaultSupplier: string) => {
+        if (!supplierBatchStr) return { supplier: defaultSupplier, batchNo: "" };
+        const parts = supplierBatchStr.split("-");
+        if (parts.length >= 2) {
+          return { supplier: parts[0].trim(), batchNo: parts.slice(1).join("-").trim() };
+        }
+        return { supplier: supplierBatchStr.trim(), batchNo: "" };
+      };
+      
+      const batches = [];
+      if (cols[supplierIdx1] || weight1 > 0) {
+        const { supplier, batchNo } = parseSupplierAndBatch(cols[supplierIdx1], "蘇慶村");
+        batches.push({ supplier, batchNo, weight: weight1 });
+      }
+      if (cols[supplierIdx2] || weight2 > 0) {
+        const { supplier, batchNo } = parseSupplierAndBatch(cols[supplierIdx2], "松柏");
+        batches.push({ supplier, batchNo, weight: weight2 });
+      }
+      if (cols[supplierIdx3] || weight3 > 0) {
+        const { supplier, batchNo } = parseSupplierAndBatch(cols[supplierIdx3], "無");
+        batches.push({ supplier, batchNo, weight: weight3 });
+      }
+      if (cols[supplierIdx4] || weight4 > 0) {
+        const { supplier, batchNo } = parseSupplierAndBatch(cols[supplierIdx4], "無");
+        batches.push({ supplier, batchNo, weight: weight4 });
+      }
+      
+      const feedingWeight = weight1 + weight2 + weight3 + weight4;
+      const currLeftover = parseFloat(cols[leftoverIdx]) || 0;
+      const otherFactors = cols[otherIdx] || "常規製造";
+      
+      const reasonStr = (cols[reasonIdx] || "").trim();
+      let anomalyReason = "無" as DailyRecord["anomalyReason"];
+      if (["魚肉較濕", "魚肉較乾", "特殊訂單", "秤重異常", "設備異常", "其他"].includes(reasonStr)) {
+        anomalyReason = reasonStr as DailyRecord["anomalyReason"];
+      } else if (reasonStr !== "" && reasonStr !== "無") {
+        anomalyReason = "其他";
+      }
+      
+      const notes = cols[notesIdx] || "";
+      
+      parsedRecords.push({
+        id: `sheet-rec-${i}`,
+        date,
+        operator,
+        barrels,
+        standardWeight: barrels * 310,
+        feedingWeight,
+        batches: batches.length > 0 ? batches : [
+          { supplier: "蘇慶村", batchNo: "無", weight: weight1 },
+          { supplier: "松柏", batchNo: "無", weight: weight2 }
+        ],
+        prevLeftover: 0,
+        currLeftover,
+        errorAmount: 0,
+        errorRate: 0,
+        otherFactors,
+        anomalyReason,
+        notes,
+        status: "normal"
+      });
+    }
+    
+    parsedRecords.sort((a, b) => a.date.localeCompare(b.date));
+    
+    for (let i = 0; i < parsedRecords.length; i++) {
+      if (i === 0) {
+        parsedRecords[i].prevLeftover = 10;
+      } else {
+        parsedRecords[i].prevLeftover = parsedRecords[i - 1].currLeftover;
+      }
+    }
+    
+    return parsedRecords;
+  };
+
+  // 取得 Google Sheets 真實數據 (完全在前端，免除 Cloud Run)
   const fetchSheetRecords = async (showNotification = false) => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/sheets/records");
+      const url = "https://docs.google.com/spreadsheets/d/1CH9DR0tlD_52-VHKDIVYCUZOT2IQkKZz1V1uqYTfWAM/export?format=csv";
+      const res = await fetch(url);
       if (res.ok) {
-        const data = await res.json();
+        const csvText = await res.text();
+        const data = parseCSVDtoRecords(csvText);
         if (data && data.length > 0) {
           setRecords(data);
+          setOfflineMode(false);
           if (showNotification) {
-            console.log(`[Google Sheets] 成功獲取 ${data.length} 筆真實生產數據！`);
+            console.log(`[Google Sheets] 成功在前端直接獲取 ${data.length} 筆試算表生產數據！`);
           }
         }
       } else {
-        console.error("無法自伺服器獲取試算表資料。");
+        console.warn("無法取得試算表數據，切換為離線本機快取。");
+        setOfflineMode(true);
       }
     } catch (err) {
-      console.error("獲取試算表資料時出錯:", err);
+      console.warn("離線或網路連線失敗，自動加載本機歷史資料:", err);
+      setOfflineMode(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 頁面加載時，自動同步試算表真實資料
+  // 頁面加載時，自動在前端同步試算表真實資料
   useEffect(() => {
     fetchSheetRecords(true);
   }, []);
@@ -131,30 +299,33 @@ export default function App() {
     };
   }, [recalculatedRecords]);
 
-  // 同步 Google Sheets (真實串接)
+  // 同步 Google Sheets (完全在前端，免除 Cloud Run)
   const handleSyncWithSheets = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch("/api/sheets/records");
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          setRecords(data);
-          
-          const now = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-          setExcelBackupLogs((prev) => [
-            `${now}: [ Sheets 同步成功 ] 已由 1CH9DR0tlD... 成功同步真實生產數據，共計 ${data.length} 筆生產資料驗證通過。`,
-            ...prev,
-          ]);
-        } else {
-          alert("⚠️ 試算表中尚未輸入任何生產數據。");
-        }
+      const url = "https://docs.google.com/spreadsheets/d/1CH9DR0tlD_52-VHKDIVYCUZOT2IQkKZz1V1uqYTfWAM/export?format=csv";
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`試算表讀取失敗: ${response.statusText}`);
+      }
+      const csvText = await response.text();
+      const parsed = parseCSVDtoRecords(csvText);
+      if (parsed && parsed.length > 0) {
+        setRecords(parsed);
+        setOfflineMode(false);
+        const now = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+        setExcelBackupLogs((prev) => [
+          `${now}: [ Sheets 同步成功 ] 已由前端直接連接 Google Sheet 成功同步最新生產數據，共計 ${parsed.length} 筆生產資料。`,
+          ...prev,
+        ]);
+        alert(`🎉 成功直接從 Google Sheets 同步 ${parsed.length} 筆真實生產數據！`);
       } else {
-        throw new Error("伺服器回應錯誤");
+        alert("⚠️ 試算表中尚未輸入任何生產數據。");
       }
     } catch (err: any) {
       console.error(err);
-      alert("⚠️ 同步 Google Sheets 資料失敗，請稍後再試！" + (err.message ? ` (${err.message})` : ""));
+      setOfflineMode(true);
+      alert("⚠️ 同步 Google Sheets 資料失敗！目前正處於「離線模式」使用本機 cached 資料。\n錯誤原因: " + (err.message || "網路連線異常或跨域 CORS 阻擋"));
     } finally {
       setIsSyncing(false);
     }
@@ -253,6 +424,17 @@ export default function App() {
 
             {/* 本地時間與快速統計 */}
             <div className="hidden md:flex items-center gap-4 text-xs">
+              {offlineMode ? (
+                <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg animate-pulse shadow-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                  <span className="font-semibold font-sans">離線本機模式</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg shadow-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                  <span className="font-semibold font-sans">Sheet 直接連線同步</span>
+                </div>
+              )}
               <div className="flex items-center gap-1.5 text-slate-600 bg-slate-100/80 border border-slate-200/60 px-3 py-1.5 rounded-lg">
                 <Clock className="w-3.5 h-3.5 text-indigo-600" />
                 <span className="font-mono font-medium">2026-06-28 23:26</span>
