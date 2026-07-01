@@ -165,6 +165,15 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
               }
             }
           }
+
+          // 3. 隱藏方框外的非圖表文字與提示元件，僅保留圖表內文字、數值與界線
+          const clonedHeader = clonedDoc.getElementById("spc-control-header");
+          const clonedTabs = clonedDoc.getElementById("spc-chart-tabs");
+          const clonedExplanation = clonedDoc.getElementById("spc-bottom-explanation");
+
+          if (clonedHeader) clonedHeader.style.display = "none";
+          if (clonedTabs) clonedTabs.style.display = "none";
+          if (clonedExplanation) clonedExplanation.style.display = "none";
         },
       });
 
@@ -347,7 +356,7 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm" id="spc-charts-container">
       {/* 控制列 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5 mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5 mb-5" id="spc-control-header">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl">
             <BarChart2 className="w-5 h-5" />
@@ -395,7 +404,7 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
       </div>
 
       {/* 管制圖切換 Tabs */}
-      <div className="flex border border-slate-200/80 mb-6 bg-slate-100/80 p-1 rounded-lg">
+      <div className="flex border border-slate-200/80 mb-6 bg-slate-100/80 p-1 rounded-lg" id="spc-chart-tabs">
         <button
           onClick={() => setActiveChartTab("rate")}
           className={`flex-1 py-2 text-center text-xs font-bold rounded-md transition-all ${
@@ -521,8 +530,8 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
         </ResponsiveContainer>
       </div>
 
-      {/* 底部說明欄位與提示資訊 - 保留完整方框、欄位與文字，匯出 PDF 時完整保留 */}
-      <div className="mt-6 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm bg-slate-50">
+      {/* 底部說明欄位與提示資訊 - 匯出時排除，不包含提示文字與方框外欄位 */}
+      <div className="mt-6 border border-slate-200/80 rounded-xl overflow-hidden shadow-sm bg-slate-50" id="spc-bottom-explanation">
         <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200/80 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
             <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
