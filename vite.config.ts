@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    baes: '/MFP_ProcessMonitor_AI/',
+    base: '/MFP_ProcessMonitor_AI/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
