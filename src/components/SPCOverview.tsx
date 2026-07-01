@@ -5,7 +5,6 @@
 
 import { useState, useMemo } from "react";
 import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { DailyRecord, SPCLimits } from "../types";
 import {
   ResponsiveContainer,
@@ -55,8 +54,8 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
   const [activeChartTab, setActiveChartTab] = useState<"rate" | "amount">("rate");
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  // 匯出 PDF 檔 (以畫面擷取並輸出成 PDF 形式，固定並保留完整介面與文字)
-  const handleExportPDF = async () => {
+  // 匯出圖片檔 (以畫面擷取形式，僅保留圖表內文字與數值、界線，移除方框外文字欄位與提示文字)
+  const handleExportImage = async () => {
     setIsExporting(true);
 
     // 備份並清潔當前頁面所有的 <style> 標籤與禁用外置 <link> 樣式表，防止 html2canvas 解析時崩潰
@@ -67,10 +66,10 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
     const originalLinkRels = linkElements.map((el) => el.rel);
 
     try {
-      const element = document.getElementById("spc-charts-container");
+      // 僅擷取圖表本身 (spc-chart-canvas)
+      const element = document.getElementById("spc-chart-canvas");
       if (!element) return;
 
-      // 保留完整介面與文字：不隱藏控制項與按鈕，保留完整的外觀細節
       // A. 在 html2canvas 開始解析前，將 live document 的所有 style 內容完全替換成安全的 rgb 格式
       styleElements.forEach((el) => {
         if (el.textContent) {
@@ -85,7 +84,7 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
 
       // 擷取為 Canvas
       const canvas = await html2canvas(element, {
-        scale: 2, // 提高解析度
+        scale: 2, // 提高解析度，使圖表與內嵌文字更加清晰
         useCORS: true,
         backgroundColor: "#ffffff",
         logging: false,
@@ -165,48 +164,17 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
               }
             }
           }
-
-          // 3. 隱藏方框外的非圖表文字與提示元件，僅保留圖表內文字、數值與界線
-          const clonedHeader = clonedDoc.getElementById("spc-control-header");
-          const clonedTabs = clonedDoc.getElementById("spc-chart-tabs");
-          const clonedExplanation = clonedDoc.getElementById("spc-bottom-explanation");
-
-          if (clonedHeader) clonedHeader.style.display = "none";
-          if (clonedTabs) clonedTabs.style.display = "none";
-          if (clonedExplanation) clonedExplanation.style.display = "none";
         },
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const pdfWidth = 297; // A4 橫向寬度 (mm)
-      const pdfHeight = 210; // A4 橫向高度 (mm)
-      const margin = 10;
-      
-      const contentWidth = pdfWidth - 2 * margin;
-      const contentHeight = (canvas.height * contentWidth) / canvas.width;
-      
-      // 適度調整高度，確保完美容納在單頁 A4
-      let renderWidth = contentWidth;
-      let renderHeight = contentHeight;
-      if (renderHeight > (pdfHeight - 2 * margin)) {
-        renderHeight = pdfHeight - 2 * margin;
-        renderWidth = (canvas.width * renderHeight) / canvas.height;
-      }
-
-      const xOffset = margin + (contentWidth - renderWidth) / 2;
-      const yOffset = margin + (pdfHeight - 2 * margin - renderHeight) / 2;
-
-      pdf.addImage(imgData, "PNG", xOffset, yOffset, renderWidth, renderHeight);
-      pdf.save(`SPC-品質管制圖-${activeChartTab === "rate" ? "誤差率" : "誤差量"}-${new Date().toISOString().split("T")[0]}.pdf`);
+      const link = document.createElement("a");
+      link.download = `SPC-品質管制圖-${activeChartTab === "rate" ? "誤差率" : "誤差量"}-${new Date().toISOString().split("T")[0]}.png`;
+      link.href = imgData;
+      link.click();
     } catch (error) {
-      console.error("PDF export error:", error);
-      alert("匯出 PDF 時發生錯誤，請稍後重試。");
+      console.error("Image export error:", error);
+      alert("匯出圖片時發生錯誤，請稍後重試。");
     } finally {
       // 絕對要回復原始 live document 標籤內容與狀態，避免影響原頁面呈現
       styleElements.forEach((el, idx) => {
@@ -390,15 +358,15 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
             </button>
           </div>
 
-          {/* 匯出管制圖 PDF 報表按鈕 */}
+          {/* 匯出管制圖圖片按鈕 */}
           <button
-            onClick={handleExportPDF}
+            onClick={handleExportImage}
             disabled={isExporting}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 shadow-sm transition-all cursor-pointer`}
-            id="btn-export-pdf"
+            id="btn-export-image"
           >
             <Download className="w-4 h-4" />
-            {isExporting ? "匯出中..." : "匯出管制圖 PDF"}
+            {isExporting ? "匯出中..." : "匯出管制圖圖片"}
           </button>
         </div>
       </div>
