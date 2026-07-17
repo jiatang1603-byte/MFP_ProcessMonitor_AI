@@ -1107,12 +1107,101 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
           </div>
         </div>
 
-        {/* 完整生產與製程品質管制數據清冊 */}
+        {/* 四、SPC 製程趨勢管制圖 */}
+        <div>
+          <h3 className="text-xs font-bold mb-2 flex items-center gap-1.5 uppercase tracking-wider" style={{ color: "#1e293b" }}>
+            <span className="w-1 h-3 rounded-full" style={{ backgroundColor: "#4f46e5" }}></span>
+            四、SPC 製程品質管制趨勢圖 ({activeChartTab === "rate" ? "投料誤差率 %" : "投料誤差量 台斤"})
+          </h3>
+          <div className="border rounded-xl p-4 bg-white" style={{ borderColor: "#cbd5e1", backgroundColor: "#ffffff" }}>
+            <div style={{ width: "730px", height: "240px" }}>
+              <ComposedChart width={730} height={240} data={chartData} margin={{ top: 15, right: 30, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="date"
+                  stroke="#64748b"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(str) => str.substring(5)}
+                />
+                <YAxis
+                  stroke="#64748b"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  domain={yAxisDomain}
+                  width={45}
+                  tickFormatter={(val) => (activeChartTab === "rate" ? `${Number(val).toFixed(1)}%` : `${Math.round(val)}斤`)}
+                />
+                <Legend verticalAlign="top" height={24} iconType="circle" wrapperStyle={{ fontSize: 10, color: "#475569" }} />
+
+                {activeChartTab === "rate" ? (
+                  <ReferenceLine y={activeLimits.meanRate} stroke="#059669" strokeWidth={1.5} label={{ value: `中心值 CL: ${activeLimits.meanRate.toFixed(2)}%`, fill: "#059669", position: "insideTopLeft", fontSize: 9, fontWeight: "bold", dy: -10, dx: 15 }} />
+                ) : (
+                  <ReferenceLine y={activeLimits.meanAmount} stroke="#7c3aed" strokeWidth={1.5} label={{ value: `中心值 CL: ${activeLimits.meanAmount.toFixed(1)}斤`, fill: "#7c3aed", position: "insideTopLeft", fontSize: 9, fontWeight: "bold", dy: -10, dx: 15 }} />
+                )}
+
+                {activeChartTab === "rate" ? (
+                  <ReferenceLine y={activeLimits.uclRate} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: `管制上限 UCL: ${activeLimits.uclRate.toFixed(2)}%`, fill: "#dc2626", position: "insideTopRight", fontSize: 9, fontWeight: "bold", dy: -10, dx: -15 }} />
+                ) : (
+                  <ReferenceLine y={activeLimits.uclAmount} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: `管制上限 UCL: ${activeLimits.uclAmount.toFixed(1)}斤`, fill: "#dc2626", position: "insideTopRight", fontSize: 9, fontWeight: "bold", dy: -10, dx: -15 }} />
+                )}
+
+                {activeChartTab === "rate" ? (
+                  <ReferenceLine y={activeLimits.lclRate} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: `管制下限 LCL: ${activeLimits.lclRate.toFixed(2)}%`, fill: "#dc2626", position: "insideBottomRight", fontSize: 9, fontWeight: "bold", dy: 10, dx: -15 }} />
+                ) : (
+                  <ReferenceLine y={activeLimits.lclAmount} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: `管制下限 LCL: ${activeLimits.lclAmount.toFixed(1)}斤`, fill: "#dc2626", position: "insideBottomRight", fontSize: 9, fontWeight: "bold", dy: 10, dx: -15 }} />
+                )}
+
+                {activeChartTab === "rate" ? (
+                  <Line
+                    name="每日誤差率 (%)"
+                    type="monotone"
+                    dataKey="errorRate"
+                    stroke="#4f46e5"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, strokeWidth: 1, fill: "#ffffff" }}
+                  />
+                ) : (
+                  <Line
+                    name="每日誤差量 (台斤)"
+                    type="monotone"
+                    dataKey="errorAmount"
+                    stroke="#9333ea"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, strokeWidth: 1, fill: "#ffffff" }}
+                  />
+                )}
+
+                {activeChartTab === "rate" ? (
+                  <Scatter
+                    name="超出管制界限 (異常)"
+                    dataKey="rateAnomaly"
+                    fill="#dc2626"
+                    shape="cross"
+                    legendType="none"
+                  />
+                ) : (
+                  <Scatter
+                    name="超出管制界限 (異常)"
+                    dataKey="amountAnomaly"
+                    fill="#dc2626"
+                    shape="cross"
+                    legendType="none"
+                  />
+                )}
+              </ComposedChart>
+            </div>
+          </div>
+        </div>
+
+        {/* 五、本期完整生產與製程品質管制數據清冊 */}
         <div>
           <h3 className="text-xs font-bold mb-2 flex items-center justify-between uppercase tracking-wider" style={{ color: "#1e293b" }}>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-3 rounded-full" style={{ backgroundColor: "#4f46e5" }}></span>
-              四、本期完整生產與製程品質管制數據清冊 (Full Process Data Records)
+              五、本期完整生產與製程品質管制數據清冊 (Full Process Data Records)
             </span>
             <span className="text-[9px] font-normal" style={{ color: "#64748b" }}>
               統計區間共 {filteredRecords.length} 筆生產數據
@@ -1129,13 +1218,14 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
                   <th className="p-2 text-right">誤差率 (%)</th>
                   <th className="p-2 text-right">誤差量 (斤)</th>
                   <th className="p-2">管制判定 / 現場因素</th>
+                  <th className="p-2">其他製造</th>
                   <th className="p-2 pr-3">備註說明</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100" style={{ color: "#334155" }}>
                 {filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-3.5 text-center font-bold" style={{ color: "#64748b" }}>
+                    <td colSpan={9} className="p-3.5 text-center font-bold" style={{ color: "#64748b" }}>
                       無生產數據
                     </td>
                   </tr>
@@ -1167,6 +1257,7 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
                         </td>
                         <td className="p-2 text-right font-mono" style={{ color: r.errorAmount === 0 ? "#1e293b" : Math.abs(r.errorRate) > 3 ? "#b91c1c" : "#1e293b" }}>{r.errorAmount >= 0 ? `+${r.errorAmount}` : r.errorAmount}斤</td>
                         <td className="p-2 font-medium" style={{ color: r.status === "normal" ? "#15803d" : r.status === "severe" ? "#b91c1c" : "#c2410c" }}>{r.status === "normal" ? statusText : `${statusText} (${r.anomalyReason})`}</td>
+                        <td className="p-2 font-medium text-slate-500">{r.otherFactors || "常規製造"}</td>
                         <td className="p-2 pr-3 truncate max-w-[150px]" style={{ color: "#64748b" }} title={r.notes}>{r.notes || "無"}</td>
                       </tr>
                     );
@@ -1192,10 +1283,8 @@ export default function SPCOverview({ records, selectedDate }: SPCOverviewProps)
           <div className="grid grid-cols-2 gap-2 rounded-lg p-2" style={{ border: "1px solid #cbd5e1", backgroundColor: "#f8fafc" }}>
             <div className="flex flex-col justify-between text-center" style={{ borderRight: "1px solid #cbd5e1" }}>
               <span className="text-[9px] font-bold block mb-1" style={{ color: "#94a3b8" }}>製表核簽 (Q.C.)</span>
-              <div className="h-6 flex items-center justify-center font-serif text-[11px] italic" style={{ borderBottom: "1px solid #cbd5e1", color: "#94a3b8" }}>
-                [ 系統核定 ]
-              </div>
-              <span className="text-[8px] mt-1 font-mono" style={{ color: "#94a3b8" }}>核定存檔</span>
+              <div className="h-6" style={{ borderBottom: "1px solid #cbd5e1" }}></div>
+              <span className="text-[8px] mt-1 font-mono" style={{ color: "#94a3b8" }}>人員簽核</span>
             </div>
             <div className="flex flex-col justify-between text-center">
               <span className="text-[9px] font-bold block mb-1" style={{ color: "#94a3b8" }}>主管審核 (Manager)</span>

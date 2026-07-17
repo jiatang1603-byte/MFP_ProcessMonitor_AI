@@ -182,11 +182,19 @@ export default function DataManagement({
   // 一鍵匯出 CSV 報表
   const exportToExcelCSV = () => {
     let csvContent = "\uFEFF"; // 加上 BOM 防亂碼
-    csvContent += "日期,投料人員,生產桶數,單桶標準用量(斤),標準重量(斤),實際投料總重(斤),前日餘料(斤),當日餘料(斤),誤差量(斤),誤差率(%),異常狀態,異常原因,其他製造說明,備註\n";
+    csvContent += "日期,投料人員,生產桶數,單桶標準用量(斤),標準重量(斤),實際投料總重(斤),實際投料總重(公斤),多供應商原料批次投料明細,前日餘料(斤),當日餘料(斤),誤差量(斤),誤差率(%),異常狀態,異常原因,其他製造說明,備註\n";
 
     records.forEach((r) => {
       const statusText = r.status === "severe" ? "🔴 重大異常" : r.status === "error" ? "🟠 異常" : r.status === "warn" ? "🟡 注意" : "🟢 正常";
-      csvContent += `${r.date},${r.operator},${r.barrels},${barrelWeight},${r.standardWeight},${r.feedingWeight},${r.prevLeftover},${r.currLeftover},${r.errorAmount},${r.errorRate.toFixed(2)}%,${statusText},${r.anomalyReason},${r.otherFactors || ""},${r.notes || ""}\n`;
+      
+      const batchDetails = r.batches 
+        ? r.batches.map(b => `${b.supplier}(批號:${b.batchNo}):${b.weight}斤`).join(" | ") 
+        : "";
+      const escapedBatchDetails = `"${batchDetails.replace(/"/g, '""')}"`;
+
+      const kgWeight = (r.feedingWeight * 0.6).toFixed(2);
+
+      csvContent += `${r.date},${r.operator},${r.barrels},${barrelWeight},${r.standardWeight},${r.feedingWeight},${kgWeight},${escapedBatchDetails},${r.prevLeftover},${r.currLeftover},${r.errorAmount},${r.errorRate.toFixed(2)}%,${statusText},${r.anomalyReason},${r.otherFactors || ""},${r.notes || ""}\n`;
     });
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -362,10 +370,11 @@ export default function DataManagement({
                     <td className="p-3 font-mono">{r.standardWeight} 斤</td>
                     {/* 實際投料，過濾出極端異常值 */}
                     <td className="p-3 font-mono text-slate-700">
-                      <div className="flex items-center gap-1.5">
-                        {r.feedingWeight} 斤
+                      <div className="flex flex-col">
+                        <span className="font-semibold">{r.feedingWeight} 斤</span>
+                        <span className="text-[10px] text-slate-400">({(r.feedingWeight * 0.6).toFixed(1)} 公斤)</span>
                         {isWeightUnreasonable && (
-                          <span className="px-1.5 py-0.2 bg-amber-50 text-amber-700 border border-amber-100 text-[8px] rounded font-bold" title="單桶平均投料量超出合理防呆區間 (250~370斤)">
+                          <span className="px-1.5 py-0.2 mt-0.5 w-fit bg-amber-50 text-amber-700 border border-amber-100 text-[8px] rounded font-bold" title="單桶平均投料量超出合理防呆區間 (250~370斤)">
                             均量疑誤
                           </span>
                         )}
