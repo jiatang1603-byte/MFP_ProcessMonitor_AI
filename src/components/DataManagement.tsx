@@ -188,7 +188,7 @@ export default function DataManagement({
       const statusText = r.status === "severe" ? "🔴 重大異常" : r.status === "error" ? "🟠 異常" : r.status === "warn" ? "🟡 注意" : "🟢 正常";
       
       const batchDetails = r.batches 
-        ? r.batches.map(b => `${b.supplier}(批號:${b.batchNo}):${b.weight}斤`).join(" | ") 
+        ? r.batches.map(b => `${b.supplier}(批號:${b.batchNo}):${b.weight}斤(${(b.weight * 0.6).toFixed(2)}公斤)`).join(" | ") 
         : "";
       const escapedBatchDetails = `"${batchDetails.replace(/"/g, '""')}"`;
 
